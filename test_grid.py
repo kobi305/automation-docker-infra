@@ -42,4 +42,4 @@ def test_google_search(driver):
         os.makedirs(reports_dir)
 
     print("Test Finished Successfully!")
-    print("Auto Trigger Works!")
+    print("Auto Trigger Works Now!")
