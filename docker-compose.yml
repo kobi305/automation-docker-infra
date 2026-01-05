@@ -1,0 +1,68 @@
+version: "3"
+services:
+  selenium-hub:
+    image: selenium/hub:latest
+    container_name: selenium-hub
+    ports:
+      - "${SELENIUM_PORT}:4444"
+    # --- תוספת 1: הגדרת בדיקת בריאות ---
+    healthcheck:
+      # פקודה שבודקת אם השרת עונה בפורט 4444
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"] 
+      interval: 5s      # תבדוק כל 5 שניות
+      timeout: 5s       # אם אין תשובה תוך 5 שניות - זה נכשל
+      retries: 10       # נסה 10 פעמים לפני שאתה מתייאש
+      start_period: 5s  # תן לו 5 שניות חסד בהתחלה להתאפס
+
+  chrome:
+    image: selenium/node-chrome:latest
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  firefox:
+    image: selenium/node-firefox:latest
+    shm_size: 2gb
+    depends_on:
+      - selenium-hub
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  test-runner:
+    build: .
+    container_name: my-automation-tests
+    # --- תוספת 2: התנאי החכם ---
+    depends_on:
+      selenium-hub:
+        condition: service_healthy  # אל תתחיל עד שה-Hub מדווח שהוא בריא!
+      chrome:
+        condition: service_started
+    environment:
+      - SELENIUM_HUB_URL=http://${HUB_HOST}:4444
+    volumes:
+      - ./reports:/app/reports
+      - ./allure-results:/app/allure-results  # <--- הוספנו את התיקייה הזו!
+      
+      # - ./test_grid.py:/app/test_grid.py
+
+# ... (שאר השירותים נשארים אותו דבר) ...
+
+  jenkins:
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins  # משתמש בקובץ המיוחד שיצרנו
+    container_name: my-jenkins
+    user: root # לצורך הפשטות בלימוד, נריץ כ-root כדי למנוע בעיות הרשאה
+    ports:
+      - "9090:8080"  # ממשק הניהול של ג'נקינס
+      - "50000:50000"
+    volumes:
+      - ./jenkins_home:/var/jenkins_home  # לשמור את ההגדרות של ג'נקינס שלא יימחקו
+      - /var/run/docker.sock:/var/run/docker.sock  # <--- זה הקסם! השלט הרחוק לדוקר
+      - .:/app  # כדי שג'נקינס יראה את קבצי הפרויקט שלך (הטסטים)

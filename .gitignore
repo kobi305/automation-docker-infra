@@ -1,0 +1,18 @@
+# Jenkins Data (Huge!)
+jenkins_home/
+
+# Test Results & Reports
+reports/
+allure-results/
+allure-report/
+
+# Python Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Environment Variables (Secrets)
+.env
+.venv/
+.idea/
+.vscode/
