@@ -1,15 +1,25 @@
 pipeline {
     agent any
 
+    // כאן אנחנו מגדירים את התפריט שיופיע למשתמש
+    parameters {
+        choice(name: 'BROWSER', choices: ['chrome', 'firefox', 'edge'], description: 'Select Browser')
+        // הוספנו גם אופציה לבחור תגיות (למשל סאניטי) - כרגע נשאיר ריק כדי להריץ הכל
+        string(name: 'MARKER', defaultValue: '', description: 'Pytest Marker (e.g., sanity, regression). Leave empty for all.')
+    }
+
     stages {
         stage('Setup Environment') {
             steps {
                 script {
-                    // יצירת קובץ הסביבה
-                    sh 'echo "SELENIUM_PORT=4445" > .env'
-                    sh 'echo "HUB_HOST=selenium-hub" >> .env'
+                    // שימוש בפרמטר שבחר המשתמש
+                    // params.BROWSER - יכיל את מה שבחרת בתפריט
+                    sh "echo 'SELENIUM_PORT=4445' > .env"
+                    sh "echo 'HUB_HOST=selenium-hub' >> .env"
                     
-                    // ניקוי ריצות קודמות
+                    // כאן אנחנו מזריקים את הבחירה שלך למשתני הסביבה
+                    sh "echo 'BROWSER=${params.BROWSER}' >> .env"
+                    
                     sh 'rm -rf allure-results'
                     sh 'mkdir -p allure-results'
                 }
@@ -18,7 +28,6 @@ pipeline {
 
         stage('Build Image') {
             steps {
-                // בניית האימג' מחדש כדי לקלוט שינויי קוד
                 sh 'docker-compose -p dockers build test-runner'
             }
         }
@@ -26,22 +35,25 @@ pipeline {
         stage('Run Tests') {
             steps {
                 script {
-                    // ניקוי קונטיינר ישן אם נתקע
                     sh 'docker rm -f temp-runner || true'
                     
-                    // הרצת הטסטים
-                    // הוספנו "|| true" כדי שגם אם יש באג בטסט, הג'נקינס ימשיך לשלב הדוח ולא יעצור מיד
-                    sh 'docker-compose -p dockers run --name temp-runner test-runner pytest --alluredir=/app/allure-results || true'
+                    // בניית הפקודה הדינמית
+                    def pytestCommand = "pytest --alluredir=/app/allure-results --browser=${params.BROWSER}"
+                    
+                    // אם המשתמש כתב משהו ב-MARKER, נוסיף אותו לפקודה
+                    if (params.MARKER != '') {
+                        pytestCommand += " -m ${params.MARKER}"
+                    }
+
+                    // הרצת הפקודה שהרכבנו
+                    sh "docker-compose -p dockers run --name temp-runner test-runner ${pytestCommand} || true"
                 }
             }
         }
         
         stage('Extract Results') {
             steps {
-                // העתקת הדוחות מהקונטיינר החוצה
                 sh 'docker cp temp-runner:/app/allure-results/. ./allure-results/'
-                
-                // ניקוי הקונטיינר
                 sh 'docker rm -f temp-runner'
             }
         }
@@ -49,7 +61,6 @@ pipeline {
 
     post {
         always {
-            // יצירת דוח Allure - גם אם הטסטים נכשלו
             allure includeProperties: false, jdk: '', results: [[path: 'allure-results']]
         }
     }
