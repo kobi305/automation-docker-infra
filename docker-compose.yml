@@ -4,15 +4,14 @@ services:
     image: selenium/hub:latest
     container_name: selenium-hub
     ports:
+      # משתמש במשתנה 4445 מה-Jenkinsfile עבור הגישה החיצונית
       - "${SELENIUM_PORT}:4444"
-    # --- תוספת 1: הגדרת בדיקת בריאות ---
     healthcheck:
-      # פקודה שבודקת אם השרת עונה בפורט 4444
       test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"] 
-      interval: 5s      # תבדוק כל 5 שניות
-      timeout: 5s       # אם אין תשובה תוך 5 שניות - זה נכשל
-      retries: 10       # נסה 10 פעמים לפני שאתה מתייאש
-      start_period: 5s  # תן לו 5 שניות חסד בהתחלה להתאפס
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
 
   chrome:
     image: selenium/node-chrome:latest
@@ -36,33 +35,26 @@ services:
 
   test-runner:
     build: .
-    container_name: my-automation-tests
-    # --- תוספת 2: התנאי החכם ---
+    container_name: test-runner  # תיקנתי לשם אחיד, לא חובה אבל מומלץ
     depends_on:
       selenium-hub:
-        condition: service_healthy  # אל תתחיל עד שה-Hub מדווח שהוא בריא!
+        condition: service_healthy
       chrome:
         condition: service_started
     environment:
-      - SELENIUM_HUB_URL=http://${HUB_HOST}:4444
-    volumes:
-      - ./reports:/app/reports
-      - ./allure-results:/app/allure-results  # <--- הוספנו את התיקייה הזו!
+      # --- תיקון קריטי 1: התאמה לקוד פייתון ---
+      # הפייתון שלך (conftest.py) מצפה ל-HUB_HOST ול-SELENIUM_PORT בנפרד
+      # לא ל-SELENIUM_HUB_URL
+      - HUB_HOST=${HUB_HOST}
       
-      # - ./test_grid.py:/app/test_grid.py
-
-# ... (שאר השירותים נשארים אותו דבר) ...
-
-  jenkins:
-    build:
-      context: .
-      dockerfile: Dockerfile.jenkins  # משתמש בקובץ המיוחד שיצרנו
-    container_name: my-jenkins
-    user: root # לצורך הפשטות בלימוד, נריץ כ-root כדי למנוע בעיות הרשאה
-    ports:
-      - "9090:8080"  # ממשק הניהול של ג'נקינס
-      - "50000:50000"
-    volumes:
-      - ./jenkins_home:/var/jenkins_home  # לשמור את ההגדרות של ג'נקינס שלא יימחקו
-      - /var/run/docker.sock:/var/run/docker.sock  # <--- זה הקסם! השלט הרחוק לדוקר
-      - .:/app  # כדי שג'נקינס יראה את קבצי הפרויקט שלך (הטסטים)
+      # --- תיקון קריטי 2: מלכודת הפורט ---
+      # הטסט רץ בתוך הרשת הפנימית, שם הפורט הוא תמיד 4444.
+      # המשתנה SELENIUM_PORT מכיל 4445 (חיצוני), ולכן אסור להשתמש בו כאן!
+      - SELENIUM_PORT=4444
+      
+    # --- תיקון קריטי 3: מחיקת ה-Volumes ---
+    # ב-Jenkinsfile אנחנו משתמשים ב-docker cp.
+    # אם תשאיר את זה, יהיו לך בעיות הרשאה קשות בג'נקינס.
+    # volumes:  <-- נמחק
+    #   - ./reports:/app/reports
+    #   - ./allure-results:/app/allure-results
